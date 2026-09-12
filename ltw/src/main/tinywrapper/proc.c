@@ -61,6 +61,14 @@ __attribute__((used)) eglMustCastToProperFunctionPointerType glXGetProcAddress(c
 
 extern void* resolve_stub(const char* procname);
 
+// FPS-uncap interceptors (ltw_swap.c)
+EGLBoolean eglSwapInterval(EGLDisplay dpy, EGLint interval);
+void glXSwapIntervalEXT(void *dpy, unsigned long drawable, int interval);
+int glXSwapIntervalMESA(unsigned int interval);
+int glXGetSwapIntervalMESA(void);
+int wglSwapIntervalEXT(int interval);
+int wglGetSwapIntervalEXT(void);
+
 eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *procname) {
     // EGL functions that we implement.
     // All of the other platform EGL functions will be redirected into Android's default EGL implementation.
@@ -68,7 +76,14 @@ eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *procname) {
         if(!strcmp("eglCreateContext", procname)) return (eglMustCastToProperFunctionPointerType) eglCreateContext;
         if(!strcmp("eglDestroyContext", procname)) return (eglMustCastToProperFunctionPointerType) eglDestroyContext;
         if(!strcmp("eglMakeCurrent", procname)) return (eglMustCastToProperFunctionPointerType) eglMakeCurrent;
+        if(!strcmp("eglSwapInterval", procname)) return (eglMustCastToProperFunctionPointerType) eglSwapInterval;
     }
+    // Swap-interval entry points desktop clients resolve by name (see ltw_swap.c)
+    if(!strcmp("glXSwapIntervalEXT", procname)) return (eglMustCastToProperFunctionPointerType) glXSwapIntervalEXT;
+    if(!strcmp("glXSwapIntervalMESA", procname)) return (eglMustCastToProperFunctionPointerType) glXSwapIntervalMESA;
+    if(!strcmp("glXGetSwapIntervalMESA", procname)) return (eglMustCastToProperFunctionPointerType) glXGetSwapIntervalMESA;
+    if(!strcmp("wglSwapIntervalEXT", procname)) return (eglMustCastToProperFunctionPointerType) wglSwapIntervalEXT;
+    if(!strcmp("wglGetSwapIntervalEXT", procname)) return (eglMustCastToProperFunctionPointerType) wglGetSwapIntervalEXT;
     // If the function doesn't start with "gl", don't even bother, pass through immediately.
     if(strncmp(procname, "gl", 2) != 0) goto fallback;
 #define GLESOVERRIDE(name)                                        \

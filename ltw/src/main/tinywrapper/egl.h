@@ -18,6 +18,14 @@
 #define MAX_FBTARGETS 8
 #define MAX_TMUS 8
 #define MAX_TEXTARGETS 8
+/* Shadow of the host driver's per-unit texture bindings.
+ * Written by glBindTexture/glActiveTexture/glBindTextureUnit interceptors in
+ * swizzle.c; read by swizzle_process_upload to avoid the synchronous
+ * glGetIntegerv the wrapper used to issue on every texture upload.
+ * 16 units covers the GLES3 minimum (GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS >= 16);
+ * units beyond that are unsupported by this fast path, which falls back to a
+ * live query. */
+#define MAX_SHADOW_TMUS 16
 
 typedef struct {
     bool ready;
@@ -81,6 +89,9 @@ typedef struct {
     unordered_map* framebuffer_map;
     unordered_map* texture_swztrack_map;
     unordered_map* bound_basebuffers[MAX_BOUND_BASEBUFFERS];
+    /* Texture-binding shadow (see MAX_SHADOW_TMUS above) */
+    GLuint shadow_tmu_bindings[MAX_SHADOW_TMUS][MAX_TEXTARGETS];
+    GLint shadow_active_tmu;
     int proxy_width, proxy_height, proxy_intformat, maxTextureSize;
     GLint max_drawbuffers;
     GLuint bound_buffers[MAX_BOUND_BUFFERS];

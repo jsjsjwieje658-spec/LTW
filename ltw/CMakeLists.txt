@@ -60,6 +60,7 @@ add_library(LTW SHARED
     ${CMAKE_CURRENT_LIST_DIR}/src/main/tinywrapper/swizzle.c
     ${CMAKE_CURRENT_LIST_DIR}/src/main/tinywrapper/vertexattrib.c
     ${CMAKE_CURRENT_LIST_DIR}/src/main/tinywrapper/env.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/main/tinywrapper/ltw_swap.c
 
     ${CMAKE_CURRENT_LIST_DIR}/src/main/tinywrapper/unordered_map/int_hash.c
     ${CMAKE_CURRENT_LIST_DIR}/src/main/tinywrapper/unordered_map/unordered_map.c

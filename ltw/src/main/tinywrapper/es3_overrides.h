@@ -135,3 +135,7 @@ GLESOVERRIDE(glTexBuffer)
 GLESOVERRIDE(glTexBufferRange)
 GLESOVERRIDE(glMapBufferRange)
 GLESOVERRIDE(glFlushMappedBufferRange)
+// Texture-binding shadow (swizzle.c): keeps uploads off the synchronous
+// glGetIntegerv path without changing observable behaviour.
+GLESOVERRIDE(glBindTexture)
+GLESOVERRIDE(glActiveTexture)
