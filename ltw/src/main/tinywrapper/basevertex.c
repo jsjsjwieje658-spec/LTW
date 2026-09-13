@@ -61,13 +61,21 @@ void glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, const voi
     es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &elementbuffer);
     if(elementbuffer == 0) {
         // I am not bothered enough to implement this.
-        printf("LTW: Base vertex draws without element buffer are not supported\n");
+        static bool nobuffer_trigger = false;
+        if(!nobuffer_trigger) {
+            printf("LTW: Base vertex draws without element buffer are not supported\n");
+            nobuffer_trigger = true; // once: per-call printf is a frame-time killer on iOS
+        }
         return;
     }
     GLint typeBytes = type_bytes(type);
     uintptr_t indicesPointer = (uintptr_t)indices;
     if(indicesPointer % typeBytes != 0) {
-        printf("LTW: misaligned base vertex draw not supported\n");
+        static bool misaligned_trigger = false;
+        if(!misaligned_trigger) {
+            printf("LTW: misaligned base vertex draw not supported\n");
+            misaligned_trigger = true;
+        }
     }
     indirect_pass_t indirect_pass;
     indirect_pass.count = count;
@@ -102,7 +110,11 @@ void glMultiDrawElementsBaseVertex(GLenum mode,
     es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &elementbuffer);
     if(elementbuffer == 0) {
         // I am not bothered enough to implement this.
-        printf("LTW: Base vertex draws without element buffer are not supported\n");
+        static bool nobuffer_trigger_md = false;
+        if(!nobuffer_trigger_md) {
+            printf("LTW: Base vertex draws without element buffer are not supported\n");
+            nobuffer_trigger_md = true; // once, not per call
+        }
         return;
     }
     GLint typeBytes = type_bytes(type);
@@ -123,7 +135,11 @@ void glMultiDrawElementsBaseVertex(GLenum mode,
     for(GLsizei i = 0; i < drawcount; i++) {
         uintptr_t indicesPointer = (uintptr_t)indices[i];
         if(indicesPointer % typeBytes != 0) {
-            printf("LTW: misaligned base vertex draw not supported (draw %i)\n", i);
+            static bool misaligned_trigger_md = false;
+            if(!misaligned_trigger_md) {
+                printf("LTW: misaligned base vertex draw not supported (draw %i)\n", i);
+                misaligned_trigger_md = true;
+            }
             return;
         }
         indirect_pass_t* pass = &indirect_passes[i];

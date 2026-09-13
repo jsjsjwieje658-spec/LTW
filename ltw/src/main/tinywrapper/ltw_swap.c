@@ -31,6 +31,61 @@
 #include "libraryinternal.h"
 #include <EGL/egl.h>
 #include <string.h>
+#include <time.h>
+
+/* Frame-time diagnostics. Enabled by default so the next user-reported freeze
+ * comes with hard evidence in latestlog.txt; disable with LTW_SILENT=1.
+ * Prints one summary line every 300 frames (min/avg/max frame ms + swap ms)
+ * and one line for any frame slower than 100ms. clock_gettime(CLOCK_MONOTONIC)
+ * is a vDSO call on iOS - no syscall per frame. */
+static int diag_enabled = 1;
+static int first_swap_seen = 0;
+static uint64_t frame_last_ns, frame_min_ms, frame_max_ms, frame_acc_ms, swap_max_ms;
+static uint32_t frame_count;
+static uint32_t slow_frame_count;
+
+static uint64_t now_ns(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t) ts.tv_sec * 1000000000ull + (uint64_t) ts.tv_nsec;
+}
+
+static uint64_t delta_ms(uint64_t a, uint64_t b) {
+    return (a > b ? a - b : b - a) / 1000000ull;
+}
+
+static void diag_frame(uint64_t swap_ms) {
+    if(!diag_enabled) return;
+    uint64_t now = now_ns();
+    if(!first_swap_seen) {
+        first_swap_seen = 1;
+        printf("LTW: present path confirmed via LTW eglSwapBuffers (frame diagnostics on)\n");
+        frame_last_ns = now;
+        return;
+    }
+    uint64_t frame_ms = delta_ms(now, frame_last_ns);
+    frame_last_ns = now;
+    if(frame_ms < frame_min_ms || frame_count == 0) frame_min_ms = frame_ms;
+    if(frame_ms > frame_max_ms) frame_max_ms = frame_ms;
+    if(swap_ms > swap_max_ms) swap_max_ms = swap_ms;
+    frame_acc_ms += frame_ms;
+    frame_count++;
+    if(frame_ms > 100) {
+        printf("LTW: slow frame #%u: %llums total, swap %llums (freeze marker)\n",
+               frame_count, (unsigned long long) frame_ms, (unsigned long long) swap_ms);
+        slow_frame_count++;
+    }
+    if(frame_count >= 300) {
+        printf("LTW: 300-frame stats: min %llums avg %llums max %llums | swap max %llums | slow(>100ms) %u\n",
+               (unsigned long long) frame_min_ms,
+               (unsigned long long) (frame_acc_ms / frame_count),
+               (unsigned long long) frame_max_ms,
+               (unsigned long long) swap_max_ms, slow_frame_count);
+        frame_min_ms = frame_max_ms = frame_acc_ms = swap_max_ms = 0;
+        frame_count = 0;
+        slow_frame_count = 0;
+    }
+}
 
 /* Cached once at library load - same pattern as init_noerror() in main.c.
  * getenv on each swap call would also be fine (it is a TLS lookup), but the
@@ -40,6 +95,7 @@ static int uncap_enabled = 1;
 __attribute__((constructor)) static void ltw_swap_init() {
     /* Default ON: this fork exists to remove the 60 FPS lock. opt-out=0 */
     uncap_enabled = !env_istrue("LTW_UNCAP_FPS_DISABLED");
+    diag_enabled = !env_istrue("LTW_SILENT");
     if(uncap_enabled) printf("LTW: FPS uncap enabled (interval 0 enforced at swap)\n");
     else printf("LTW: FPS uncap disabled by LTW_UNCAP_FPS_DISABLED, host vsync applies\n");
 }
@@ -105,19 +161,6 @@ int wglGetSwapIntervalEXT(void) {
     return host();
 }
 
-/* Layer 2/3 enforcement hooks, called from egl.c. EGLDisplay is passed by
- * the caller; for SwapBuffers enforcement the display of the surface being
- * presented is the right target. */
-static EGLDisplay last_known_display = EGL_NO_DISPLAY;
-
-INTERNAL void ltw_swap_note_display(EGLDisplay dpy) {
-    if(dpy != EGL_NO_DISPLAY) last_known_display = dpy;
-}
-
-INTERNAL void ltw_swap_enforce_last_display(void) {
-    if(last_known_display != EGL_NO_DISPLAY) ltw_swap_enforce(last_known_display);
-}
-
 /* Layer 3: present-path enforcement. Clients that render through EGL call
  * eglSwapBuffers every frame; GLFW's iOS port in Pojav-family launchers
  * resolves it by name, so exporting it here intercepts the frame loop of
@@ -129,9 +172,11 @@ EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
     EGLBoolean (*host)(EGLDisplay, EGLSurface) =
         (EGLBoolean (*)(EGLDisplay, EGLSurface)) host_eglGetProcAddress("eglSwapBuffers");
     if(host == NULL) return EGL_FALSE;
-    ltw_swap_note_display(dpy);
+    uint64_t t0 = now_ns();
     EGLBoolean result = host(dpy, surface);
+    uint64_t swap_ms = delta_ms(now_ns(), t0);
     ltw_swap_enforce(dpy);
+    diag_frame(swap_ms);
     return result;
 }
 
@@ -139,9 +184,11 @@ EGLBoolean eglSwapBuffersWithDamageKHR(EGLDisplay dpy, EGLSurface surface, EGLin
     EGLBoolean (*host)(EGLDisplay, EGLSurface, EGLint *, EGLint) =
         (EGLBoolean (*)(EGLDisplay, EGLSurface, EGLint *, EGLint)) host_eglGetProcAddress("eglSwapBuffersWithDamageKHR");
     if(host == NULL) return eglSwapBuffers(dpy, surface);
-    ltw_swap_note_display(dpy);
+    uint64_t t0 = now_ns();
     EGLBoolean result = host(dpy, surface, rects, n_rects);
+    uint64_t swap_ms = delta_ms(now_ns(), t0);
     ltw_swap_enforce(dpy);
+    diag_frame(swap_ms);
     return result;
 }
 
@@ -149,8 +196,10 @@ EGLBoolean eglSwapBuffersWithDamageEXT(EGLDisplay dpy, EGLSurface surface, EGLin
     EGLBoolean (*host)(EGLDisplay, EGLSurface, EGLint *, EGLint) =
         (EGLBoolean (*)(EGLDisplay, EGLSurface, EGLint *, EGLint)) host_eglGetProcAddress("eglSwapBuffersWithDamageEXT");
     if(host == NULL) return eglSwapBuffers(dpy, surface);
-    ltw_swap_note_display(dpy);
+    uint64_t t0 = now_ns();
     EGLBoolean result = host(dpy, surface, rects, n_rects);
+    uint64_t swap_ms = delta_ms(now_ns(), t0);
     ltw_swap_enforce(dpy);
+    diag_frame(swap_ms);
     return result;
 }
