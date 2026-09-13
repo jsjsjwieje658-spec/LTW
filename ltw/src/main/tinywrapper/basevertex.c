@@ -4,6 +4,7 @@
  * For use under LGPL-3.0
  */
 #include <GLES3/gl31.h>
+#include <stdlib.h>
 #include "proc.h"
 #include "egl.h"
 #include "main.h"
@@ -105,7 +106,20 @@ void glMultiDrawElementsBaseVertex(GLenum mode,
         return;
     }
     GLint typeBytes = type_bytes(type);
-    indirect_pass_t indirect_passes[drawcount];
+    // Scratch buffer instead of a VLA: drawcount is unbounded client input, a
+    // large burst would blow the stack. Grown geometrically, never freed per
+    // frame - same lifetime as the context.
+    static indirect_pass_t* scratch = NULL;
+    static GLsizei scratch_cap = 0;
+    if(drawcount > scratch_cap) {
+        GLsizei newcap = scratch_cap ? scratch_cap : 64;
+        while(newcap < drawcount) newcap *= 2;
+        indirect_pass_t* grown = realloc(scratch, newcap * sizeof(indirect_pass_t));
+        if(grown == NULL) return; // OOM: skip the draw, better than crashing
+        scratch = grown;
+        scratch_cap = newcap;
+    }
+    indirect_pass_t* indirect_passes = scratch;
     for(GLsizei i = 0; i < drawcount; i++) {
         uintptr_t indicesPointer = (uintptr_t)indices[i];
         if(indicesPointer % typeBytes != 0) {
@@ -120,7 +134,11 @@ void glMultiDrawElementsBaseVertex(GLenum mode,
         pass->reservedMustBeZero = 0;
     }
     es3_functions.glBindBuffer(GL_DRAW_INDIRECT_BUFFER, renderer->indirectRenderBuffer);
-    es3_functions.glBufferData(GL_DRAW_INDIRECT_BUFFER, (long)sizeof(indirect_pass_t) * drawcount, indirect_passes, GL_STREAM_DRAW);
+    // Orphan-then-fill is the canonical STREAM_DRAW upload: naming a full
+    // new size each call lets the driver hand out fresh storage instead of
+    // synchronizing with the GPU still reading the previous frame's data.
+    es3_functions.glBufferData(GL_DRAW_INDIRECT_BUFFER, (long)sizeof(indirect_pass_t) * drawcount, NULL, GL_STREAM_DRAW);
+    es3_functions.glBufferSubData(GL_DRAW_INDIRECT_BUFFER, 0, (long)sizeof(indirect_pass_t) * drawcount, indirect_passes);
     if(current_context->multidraw_indirect) {
         es3_functions.glMultiDrawElementsIndirectEXT(mode, type, 0, drawcount, 0);
     } else for(GLsizei i = 0; i < drawcount; i++) {

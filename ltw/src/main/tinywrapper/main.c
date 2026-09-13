@@ -182,6 +182,7 @@ INTERNAL bool filter_params_float(GLenum target, GLenum pname, GLfloat param) {
             static bool lodbias_trigger = false;
             if(!lodbias_trigger) {
                 printf("LTW: setting GL_TEXTURE_LOD_BIAS to nondefault value not supported\n");
+                lodbias_trigger = true; // once, not per call: printf on iOS is expensive
             }
         }
         return false;

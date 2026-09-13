@@ -11,6 +11,10 @@
 #include "unordered_map/unordered_map.h"
 #include <string.h>
 
+// FPS-uncap enforcement (ltw_swap.c)
+void ltw_swap_note_display(void *dpy);
+void ltw_swap_enforce(void *dpy);
+
 __thread context_t *internal_current_context = NULL;
 unordered_map* context_map;
 
@@ -300,5 +304,10 @@ EGLBoolean eglMakeCurrent (EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGL
         tw_context->context_rdy = true;
     }
     internal_current_context = tw_context;
+    // FPS uncap (ltw_swap.c): clients (GLFW) call eglSwapInterval right after
+    // making the context current; re-assert interval 0 here so an interval
+    // set before or during MakeCurrent cannot survive. No-op if already 0.
+    ltw_swap_note_display(dpy);
+    ltw_swap_enforce(dpy);
     return EGL_TRUE;
 }

@@ -63,6 +63,9 @@ extern void* resolve_stub(const char* procname);
 
 // FPS-uncap interceptors (ltw_swap.c)
 EGLBoolean eglSwapInterval(EGLDisplay dpy, EGLint interval);
+EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface);
+EGLBoolean eglSwapBuffersWithDamageKHR(EGLDisplay dpy, EGLSurface surface, EGLint *rects, EGLint n_rects);
+EGLBoolean eglSwapBuffersWithDamageEXT(EGLDisplay dpy, EGLSurface surface, EGLint *rects, EGLint n_rects);
 void glXSwapIntervalEXT(void *dpy, unsigned long drawable, int interval);
 int glXSwapIntervalMESA(unsigned int interval);
 int glXGetSwapIntervalMESA(void);
@@ -77,6 +80,11 @@ eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *procname) {
         if(!strcmp("eglDestroyContext", procname)) return (eglMustCastToProperFunctionPointerType) eglDestroyContext;
         if(!strcmp("eglMakeCurrent", procname)) return (eglMustCastToProperFunctionPointerType) eglMakeCurrent;
         if(!strcmp("eglSwapInterval", procname)) return (eglMustCastToProperFunctionPointerType) eglSwapInterval;
+        // Present path: exported as real symbols too (direct dlsym hits them),
+        // returned here so eglGetProcAddress-based clients get the same wrapper.
+        if(!strcmp("eglSwapBuffers", procname)) return (eglMustCastToProperFunctionPointerType) eglSwapBuffers;
+        if(!strcmp("eglSwapBuffersWithDamageKHR", procname)) return (eglMustCastToProperFunctionPointerType) eglSwapBuffersWithDamageKHR;
+        if(!strcmp("eglSwapBuffersWithDamageEXT", procname)) return (eglMustCastToProperFunctionPointerType) eglSwapBuffersWithDamageEXT;
     }
     // Swap-interval entry points desktop clients resolve by name (see ltw_swap.c)
     if(!strcmp("glXSwapIntervalEXT", procname)) return (eglMustCastToProperFunctionPointerType) glXSwapIntervalEXT;
